@@ -14,13 +14,12 @@ import shutil
 SERVER_1 = "100.69.207.65"
 SERVER_ADDRESSES = "%s:8848, 100.69.207.66:8848" % SERVER_1
 SERVER_ADDRESSES = "127.0.0.1:8848"
-NAMESPACE = "6cface1f-2f1b-4744-a59d-fd818b91a799"
+NAMESPACE = "a1f503dd-fdc2-400e-bdd8-fae1267521b4"
 NAMESPACE = ""
 
 # Set the following values if authentication mode is enabled on the server
-USERNAME = None
-PASSWORD = None
-
+USERNAME = "nacos"
+PASSWORD = "nacos"
 client = nacos.NacosClient(SERVER_ADDRESSES, namespace=NAMESPACE, username=USERNAME, password=PASSWORD)
 # Set the following option if http requests need through by proxy
 # client.set_options(proxies={"http":"192.168.56.1:809"})
@@ -183,8 +182,8 @@ class TestClient(unittest.TestCase):
         self.assertEqual(len(client.list_naming_instance("test.service")["hosts"]), 1)
 
     def test_get_naming_instance(self):
-        client.add_naming_instance("test.service", "1.0.0.1", 8080, "testCluster2", 0.1, "{}", False, True)
-        self.assertEqual(client.get_naming_instance("test.service", "1.0.0.1", 8080, "testCluster2")['ip'], u'1.0.0.1')
+        client.add_naming_instance("test.service", "1.0.0.2", 8080, "testCluster2", 0.1, "{}", False, True)
+        self.assertEqual(client.get_naming_instance("test.service", "1.0.0.2", 8080, "testCluster2")['ip'], u'1.0.0.2')
 
     def test_send_heartbeat(self):
         client.add_naming_instance("test.service", "1.0.0.1", 8080, "testCluster2", 0.1, "{}", False, True)

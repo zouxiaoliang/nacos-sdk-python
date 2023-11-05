@@ -274,6 +274,9 @@ class NacosClient:
         self.no_snapshot = False
         self.proxies = None
 
+        self.access_token = ""
+        self.timeout = 0
+
         logger.info("[client-init] endpoint:%s, tenant:%s" % (endpoint, namespace))
 
     def set_options(self, **kwargs):
@@ -635,6 +638,7 @@ class NacosClient:
                     ctx.check_hostname = False
                     ctx.verify_mode = ssl.CERT_NONE
                 else:
+                    logger.debug("[do-sync-req] url:%s" % server_url + url)
                     req = Request(url=server_url + url, data=urlencode(data).encode() if data else None,
                                   headers=all_headers, method=method)
                     ctx = ssl.SSLContext()
@@ -655,7 +659,8 @@ class NacosClient:
             except HTTPError as e:
                 if e.code in [HTTPStatus.INTERNAL_SERVER_ERROR, HTTPStatus.BAD_GATEWAY,
                               HTTPStatus.SERVICE_UNAVAILABLE]:
-                    logger.warning("[do-sync-req] server:%s is not available for reason:%s" % (server, e.msg))
+                    logger.warning("[do-sync-req] server:%s is not available for error code: %d, reason:%s" % (
+                    server, e.code, e.msg))
                 else:
                     raise
             except socket.timeout:
@@ -777,8 +782,23 @@ class NacosClient:
         headers.update({"User-Agent": "Nacos-Python-Client:v" + VERSION})
 
     def _inject_auth_info(self, headers, params, data, module="config"):
-        if self.username and self.password and params:
-            params.update({"username": self.username, "password": self.password})
+        if "login" == module:
+            return
+
+        if self.username and self.password:
+            if time.time() > self.timeout:
+                data = self._do_sync_req("/nacos/v1/auth/login", None, None, {
+                    "username": self.username,
+                    "password": self.password
+                }, None, "POST", "login")
+
+                body = json.loads(data.read())
+
+                self.access_token = body["accessToken"]
+                self.timeout = time.time() + body['tokenTtl']
+            # headers["accessToken"] = self.access_token
+            params["accessToken"] = self.access_token
+
         if not self.auth_enabled:
             return
         # in case tenant or group is null
@@ -839,9 +859,8 @@ class NacosClient:
             else:
                 params["metadata"] = metadata
 
-
     def add_naming_instance(self, service_name, ip, port, cluster_name=None, weight=1.0, metadata=None,
-                            enable=True, healthy=True, ephemeral=True,group_name=DEFAULT_GROUP_NAME):
+                            enable=True, healthy=True, ephemeral=True, group_name=DEFAULT_GROUP_NAME):
         logger.info("[add-naming-instance] ip:%s, port:%s, service_name:%s, namespace:%s" % (
             ip, port, service_name, self.namespace))
 
@@ -862,7 +881,8 @@ class NacosClient:
             params["namespaceId"] = self.namespace
 
         try:
-            resp = self._do_sync_req("/nacos/v1/ns/instance", None, None, params, self.default_timeout, "POST", "naming")
+            resp = self._do_sync_req("/nacos/v1/ns/instance", None, None, params, self.default_timeout, "POST",
+                                     "naming")
             c = resp.read()
             logger.info("[add-naming-instance] ip:%s, port:%s, service_name:%s, namespace:%s, server response:%s" % (
                 ip, port, service_name, self.namespace, c))
@@ -876,7 +896,8 @@ class NacosClient:
             logger.exception("[add-naming-instance] exception %s occur" % str(e))
             raise
 
-    def remove_naming_instance(self, service_name, ip, port, cluster_name=None, ephemeral=True,group_name=DEFAULT_GROUP_NAME):
+    def remove_naming_instance(self, service_name, ip, port, cluster_name=None, ephemeral=True,
+                               group_name=DEFAULT_GROUP_NAME):
         logger.info("[remove-naming-instance] ip:%s, port:%s, service_name:%s, namespace:%s" % (
             ip, port, service_name, self.namespace))
 
@@ -885,7 +906,7 @@ class NacosClient:
             "port": port,
             "serviceName": service_name,
             "ephemeral": ephemeral,
-            "groupName":group_name
+            "groupName": group_name
         }
 
         if cluster_name is not None:
@@ -895,7 +916,8 @@ class NacosClient:
             params["namespaceId"] = self.namespace
 
         try:
-            resp = self._do_sync_req("/nacos/v1/ns/instance", None, None, params, self.default_timeout, "DELETE", "naming")
+            resp = self._do_sync_req("/nacos/v1/ns/instance", None, None, params, self.default_timeout, "DELETE",
+                                     "naming")
             c = resp.read()
             logger.info("[remove-naming-instance] ip:%s, port:%s, service_name:%s, namespace:%s, server response:%s" % (
                 ip, port, service_name, self.namespace, c))
@@ -910,7 +932,7 @@ class NacosClient:
             raise
 
     def modify_naming_instance(self, service_name, ip, port, cluster_name=None, weight=None, metadata=None,
-                               enable=None, ephemeral=True,group_name=DEFAULT_GROUP_NAME):
+                               enable=None, ephemeral=True, group_name=DEFAULT_GROUP_NAME):
         logger.info("[modify-naming-instance] ip:%s, port:%s, service_name:%s, namespace:%s" % (
             ip, port, service_name, self.namespace))
 
@@ -978,7 +1000,8 @@ class NacosClient:
             params['groupName'] = group_name
 
         try:
-            resp = self._do_sync_req("/nacos/v1/ns/instance/list", None, params, None, self.default_timeout, "GET", "naming")
+            resp = self._do_sync_req("/nacos/v1/ns/instance/list", None, params, None, self.default_timeout, "GET",
+                                     "naming")
             c = resp.read()
             logger.info("[list-naming-instance] service_name:%s, namespace:%s, server response:%s" %
                         (service_name, self.namespace, c))
@@ -1024,7 +1047,8 @@ class NacosClient:
             logger.exception("[get-naming-instance] exception %s occur" % str(e))
             raise
 
-    def send_heartbeat(self, service_name, ip, port, cluster_name=None, weight=1.0, metadata=None, ephemeral=True,group_name=DEFAULT_GROUP_NAME):
+    def send_heartbeat(self, service_name, ip, port, cluster_name=None, weight=1.0, metadata=None, ephemeral=True,
+                       group_name=DEFAULT_GROUP_NAME):
         logger.info("[send-heartbeat] ip:%s, port:%s, service_name:%s, namespace:%s" % (ip, port, service_name,
                                                                                         self.namespace))
         beat_data = {
@@ -1055,7 +1079,8 @@ class NacosClient:
             params["namespaceId"] = self.namespace
 
         try:
-            resp = self._do_sync_req("/nacos/v1/ns/instance/beat", None, params, None, self.default_timeout, "PUT", "naming")
+            resp = self._do_sync_req("/nacos/v1/ns/instance/beat", None, params, None, self.default_timeout, "PUT",
+                                     "naming")
             c = resp.read()
             logger.info("[send-heartbeat] ip:%s, port:%s, service_name:%s, namespace:%s, server response:%s" %
                         (ip, port, service_name, self.namespace, c))
@@ -1146,7 +1171,7 @@ class NacosClient:
         remove listener from subscribed  listener manager
         :param service_name:    service_name
         :param listener_name:   listener name
-        :return: 
+        :return:
         """
         listener_manager = self.subscribed_local_manager.get_local_listener_manager(key=service_name)
         if not listener_manager:
@@ -1159,7 +1184,7 @@ class NacosClient:
     def stop_subscribe(self):
         """
         stop subscribe timer scheduler
-        :return: 
+        :return:
         """
         self.subscribe_timer_manager.stop()
 
